@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Time evolution of chirality order parameter and correlation length,
-with user-configurable line colors.
+Modified analysis script for Motorized Chromosome KZM studies.
+
+Key Additions:
+1. Global Order Parameter (Psi): Measures net chirality (symmetry breaking).
+2. Average Domain Size: Tracks coarsening dynamics.
+3. Kymograph: Visualizes spatiotemporal evolution of chirality.
 
 Outputs:
-- chirality_time_series.txt
-- phi_bar_vs_time.png
-- xi_vs_time.png
+- observables.txt: Time series of all metrics.
+- kymograph_chirality.png: Spacetime heatmap.
+- comparison_order_parameters.png: Local vs Global chirality.
+- ... other plots.
 """
 
 import os
@@ -16,6 +21,7 @@ import glob
 import math
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 
 from numba import cuda
 from scipy.signal import savgol_filter
@@ -84,11 +90,18 @@ def calculate_phi_kernel(beads, phis, T):
 
 
 # =========================
-# Order parameter + corrlen
+# Analysis Functions
 # =========================
-def chirality_order_parameter(phi):
+def calculate_order_parameters(phi):
+    """
+    Returns:
+    - phi_bar: Local chirality strength <|phi|> (How twisted is it locally?)
+    - psi: Global order parameter |<phi>| (Is the whole thing left or right?)
+    """
     phi = np.asarray(phi, dtype=np.float64)
-    return float(np.mean(np.abs(phi)))
+    phi_bar = float(np.mean(np.abs(phi)))
+    psi = float(np.abs(np.mean(phi)))
+    return phi_bar, psi
 
 
 def autocorr_1d(x):
@@ -96,236 +109,243 @@ def autocorr_1d(x):
     n = x.size
     if n < 3:
         return np.ones(n, dtype=np.float64)
-
     x = x - np.mean(x)
     var = np.mean(x * x)
     if var <= 0:
         return np.ones(n, dtype=np.float64)
-
+    # FFT autocorr
     m = 1 << (2 * n - 1).bit_length()
     fx = np.fft.rfft(x, n=m)
     ac = np.fft.irfft(fx * np.conjugate(fx), n=m)[:n]
-
-    denom = np.arange(n, 0, -1, dtype=np.float64)  # (n-r)
+    denom = np.arange(n, 0, -1, dtype=np.float64)
     ac = ac / denom
-    C = ac / ac[0]
-    return C
+    return ac / ac[0]
 
 
 def correlation_length_from_C(C, method="1e"):
     C = np.asarray(C, dtype=np.float64)
     n = C.size
-    if n < 2:
-        return 0.0
-
+    if n < 2: return 0.0
     if method == "1e":
         target = math.exp(-1.0)
         idx = np.where(C <= target)[0]
-        if len(idx) == 0:
-            return float(n - 1)
+        if len(idx) == 0: return float(n - 1)
         r1 = int(idx[0])
-        if r1 == 0:
-            return 0.0
+        if r1 == 0: return 0.0
         r0 = r1 - 1
         y0, y1 = C[r0], C[r1]
-        if y0 == y1:
-            return float(r1)
+        if y0 == y1: return float(r1)
         t = (target - y0) / (y1 - y0)
         return float(r0 + t)
+    return 0.0
 
-    if method == "int":
-        neg = np.where(C[1:] < 0)[0]
-        rmax = int(neg[0] + 1) if len(neg) > 0 else (n - 1)
-        return float(np.sum(C[:rmax + 1]))
 
-    raise ValueError("Unknown method.")
+def find_perversions_and_domains(phi_smooth, eps=0.05, min_gap=20):
+    """
+    Returns:
+    - perv_idx: Indices of domain walls.
+    - avg_domain_size: Average size of chiral domains (beads).
+    """
+    phi_smooth = np.asarray(phi_smooth, dtype=np.float64)
+    s = np.zeros_like(phi_smooth, dtype=np.int8)
+    s[phi_smooth > eps] = 1
+    s[phi_smooth < -eps] = -1
+
+    # Fill zeros forward
+    last = 0
+    for i in range(len(s)):
+        if s[i] == 0:
+            s[i] = last
+        else:
+            last = s[i]
+    if s[0] == 0:
+        first_nz = np.nonzero(s)[0]
+        if len(first_nz) > 0:
+            s[:first_nz[0]] = s[first_nz[0]]
+        else:
+            return np.array([], dtype=int), float(len(phi_smooth))  # No perversions
+
+    flips = np.where(np.diff(s) != 0)[0]
+
+    # Merge nearby flips
+    merged = []
+    for f in flips:
+        if (not merged) or (f - merged[-1] >= min_gap):
+            merged.append(int(f))
+
+    perv_idx = np.array(merged, dtype=int)
+
+    # Calculate Domain Sizes
+    total_len = len(phi_smooth)
+    if len(perv_idx) == 0:
+        avg_size = float(total_len)
+    else:
+        # Include start(0) and end(total_len) to get segment lengths
+        boundaries = np.concatenate(([0], perv_idx, [total_len]))
+        sizes = np.diff(boundaries)
+        avg_size = np.mean(sizes)
+
+    return perv_idx, avg_size
 
 
 # =========================
-# Frame discovery + reading
+# IO & GPU Compute
 # =========================
-def extract_frame_index(path):
-    name = os.path.basename(path)
-    m = re.search(r"frame[_-]?(\d+)\.txt$", name)
-    if not m:
-        return None
-    return int(m.group(1))
-
-
 def list_frame_files(patterns=("frame_*.txt", "frame*.txt")):
     files = []
     for pat in patterns:
         files.extend(glob.glob(pat))
-    items = []
-    for f in files:
-        j = extract_frame_index(f)
-        if j is not None:
-            items.append((j, f))
-    items.sort(key=lambda x: x[0])
-    return items
+
+    def extract_index(name):
+        m = re.search(r"frame[_-]?(\d+)\.txt$", name)
+        return int(m.group(1)) if m else -1
+
+    files = sorted([f for f in files if extract_index(f) != -1], key=extract_index)
+    return [(extract_index(f), f) for f in files]
 
 
 def load_beads_positions(path, xyz_cols=(1, 4)):
+    # Note: For huge datasets, consider using pandas.read_csv or binary formats
     data = np.loadtxt(path)
-    start, end = xyz_cols
-    pos = data[:, start:end]
-    return np.ascontiguousarray(pos)
+    return np.ascontiguousarray(data[:, xyz_cols[0]:xyz_cols[1]])
 
 
-# =========================
-# Per-frame computation
-# =========================
 def compute_phi_gpu(beads_positions, T, threadsperblock=128):
     n_beads = beads_positions.shape[0]
     n_phi = n_beads - int(1.25 * T)
-    if n_phi <= 5:
-        raise ValueError(f"Not enough beads ({n_beads}) for T={T}.")
-
     phis = np.zeros(n_phi, dtype=np.float32)
-
     beads_d = cuda.to_device(beads_positions)
     phis_d = cuda.to_device(phis)
-
-    blockspergrid = (n_phi + (threadsperblock - 1)) // threadsperblock
-    calculate_phi_kernel[blockspergrid, threadsperblock](beads_d, phis_d, T)
+    blocks = (n_phi + threadsperblock - 1) // threadsperblock
+    calculate_phi_kernel[blocks, threadsperblock](beads_d, phis_d, T)
     return phis_d.copy_to_host()
 
 
 def smooth_phi(phi, window=101, polyorder=3):
-    phi = np.asarray(phi, dtype=np.float64)
-    if phi.size < 7:
-        return phi.copy()
     w = int(window)
-    if w >= phi.size:
-        w = max(5, (phi.size // 2) * 2 - 1)
-    if w < 5:
-        w = 5
-    if w % 2 == 0:
-        w += 1
-    return savgol_filter(phi, window_length=w, polyorder=polyorder)
+    if w >= phi.size: w = max(5, (phi.size // 2) * 2 - 1)
+    if w < 5: w = 5
+    if w % 2 == 0: w += 1
+    return savgol_filter(phi, w, polyorder)
 
 
-def compute_observables_for_frame(path, T, xyz_cols=(1, 4),
-                                  sg_window=101, sg_poly=3,
-                                  use_smoothed_for_OP=True):
-    beads = load_beads_positions(path, xyz_cols=xyz_cols)
-    phi = compute_phi_gpu(beads, T=T)
-    phi_s = smooth_phi(phi, window=sg_window, polyorder=sg_poly)
+def process_frame(path, T, xyz_cols, sg_window, perv_eps, perv_gap):
+    beads = load_beads_positions(path, xyz_cols)
+    phi_raw = compute_phi_gpu(beads, T)
+    phi_s = smooth_phi(phi_raw, window=sg_window)
 
-    phi_for = phi_s if use_smoothed_for_OP else phi
-    phi_bar = chirality_order_parameter(phi_for)
-
-    C = autocorr_1d(phi_for)
+    # Metrics
+    phi_bar, psi = calculate_order_parameters(phi_s)
+    C = autocorr_1d(phi_s)
     xi_1e = correlation_length_from_C(C, method="1e")
-    xi_int = correlation_length_from_C(C, method="int")
+    perv_idx, avg_dom_size = find_perversions_and_domains(phi_s, eps=perv_eps, min_gap=perv_gap)
 
-    return phi_bar, xi_1e, xi_int
+    return phi_bar, psi, xi_1e, len(perv_idx), avg_dom_size, phi_s
 
 
 # =========================
 # Main
 # =========================
 if __name__ == "__main__":
-    # -------- Config (edit here) --------
-    stride = 20
-    T = 125 * 1.25
-    xyz_cols = (1, 4)
-    sg_window = 101
-    sg_poly = 3
-    use_smoothed_for_OP = True
+    # --- Parameters ---
+    stride = 20  # Analyze every Nth frame
+    T = 125 * 1.25  # Chirality scale
+    xyz_cols = (1, 4)  # Column indices for X,Y,Z
+    sg_window = 101  # Smoothing window
+    perv_eps = 0.05  # Threshold for domain detection
+    perv_gap = 20  # Minimum domain wall separation
+    dt = 1.0  # Time step per frame index
 
-    dt = None  # e.g. dt = 1.0 if you want physical time
-
-    # -------- NEW: Line colors (edit here) --------
-    # Any matplotlib color is OK: 'k', 'r', 'tab:blue', '#00ff00', etc.
-    COLOR_PHI_BAR = '#5EBEA3'
-    COLOR_XI_1E = '#FB6542'
-    COLOR_XI_INT = '#375E97'
-
-    # Optional styling knobs
-    LINEWIDTH = 2.0
-    MARKER = None          # e.g. 'o' if you want markers
-    MARKERSIZE = 3
-
-    # -------- Find frames --------
+    # --- Setup ---
     items = list_frame_files()
-    if not items:
-        raise FileNotFoundError("No frame files found (frame_*.txt / frame*.txt) in current directory.")
-
     sampled = [(j, f) for (j, f) in items if (j % stride == 0)]
-    if not sampled:
-        sampled = items[::stride]
+    if not sampled: sampled = items[::stride]
 
-    # -------- Loop --------
-    out_rows = []
+    results = []
+    kymograph_data = []  # Stores phi arrays for heatmap
+
+    print(f"Processing {len(sampled)} frames...")
+
     for j, path in sampled:
         try:
-            phi_bar, xi_1e, xi_int = compute_observables_for_frame(
-                path, T=T, xyz_cols=xyz_cols,
-                sg_window=sg_window, sg_poly=sg_poly,
-                use_smoothed_for_OP=use_smoothed_for_OP
+            phi_bar, psi, xi, n_perv, avg_dom, phi_arr = process_frame(
+                path, T, xyz_cols, sg_window, perv_eps, perv_gap
             )
-            t = (j * dt) if (dt is not None) else float(j)
-            out_rows.append([t, j, phi_bar, xi_1e, xi_int])
-            print(f"[OK] j={j:8d}  phi_bar={phi_bar:.6g}  xi_1e={xi_1e:.3f}  xi_int={xi_int:.3f}  ({os.path.basename(path)})")
+
+            t = j * dt
+            results.append([t, j, phi_bar, psi, xi, n_perv, avg_dom])
+            kymograph_data.append(phi_arr)
+
+            print(f"j={j:<6} Psi={psi:.3f} xi={xi:.1f} N_perv={n_perv:<3} L_dom={avg_dom:.1f}")
+
         except Exception as e:
-            print(f"[SKIP] j={j} file={path} error={e}")
+            print(f"Error frame {j}: {e}")
 
-    if not out_rows:
-        raise RuntimeError("No frames successfully processed.")
+    # --- Save Data ---
+    out_arr = np.array(results)
+    header = "t j phi_bar(local_mag) psi(global_order) xi_1e n_perv avg_domain_size"
+    np.savetxt("observables.txt", out_arr, header=header)
 
-    out = np.array(out_rows, dtype=np.float64)
-    np.savetxt(
-        "chirality_time_series.txt",
-        out,
-        header="t  frame_index_j  phi_bar(mean|phi|)  xi_1e(beads)  xi_int(beads)"
-    )
+    # --- Visualization ---
+    t = out_arr[:, 0]
+    phi_bar = out_arr[:, 2]
+    psi = out_arr[:, 3]
+    xi = out_arr[:, 4]
+    n_perv = out_arr[:, 5]
+    avg_dom = out_arr[:, 6]
 
-    t = out[:, 0]
-    phi_bar_ts = out[:, 2]
-    xi_1e_ts = out[:, 3]
-    xi_int_ts = out[:, 4]
+    # 1. Local vs Global Order Parameter (KZM Signature)
+    fig1, ax1 = plt.subplots(figsize=(8, 5))
+    ax1.plot(t, phi_bar, label=r"Local Magnitude $\langle|\phi|\rangle$", color='#5EBEA3', lw=2)
+    ax1.plot(t, psi, label=r"Global Order $|\langle\phi\rangle|$", color='k', linestyle='--', lw=2)
+    ax1.set_xlabel("Time")
+    ax1.set_ylabel("Order Parameter")
+    ax1.set_title("Symmetry Breaking: Local vs Global Chirality")
+    ax1.legend()
+    fig1.savefig("comparison_order_parameters.png", dpi=300)
 
-    xlabel = "time" if dt is not None else "frame index j"
+    # 2. Perversions and Domain Size (Coarsening)
+    fig2, ax2 = plt.subplots(figsize=(8, 5))
+    ax2.plot(t, n_perv, color='#AA66CC', label="Number of Perversions", lw=2)
+    ax2.set_ylabel(r"$N_{perv}$", color='#AA66CC')
+    ax2.tick_params(axis='y', labelcolor='#AA66CC')
 
-    # -------- Plot: phi_bar(t) --------
-    fig1, ax1 = plt.subplots(figsize=(7.0, 4.0))
-    ax1.plot(
-        t, phi_bar_ts,
-        linewidth=LINEWIDTH,
-        color=COLOR_PHI_BAR,
-        marker=MARKER,
-        markersize=MARKERSIZE
-    )
-    ax1.set_xlabel(xlabel, fontsize=12)
-    ax1.set_ylabel(r"$\bar{\phi}=\langle|\phi|\rangle$", fontsize=12)
-    ax1.set_title("Chirality order parameter vs time", fontsize=13)
-    fig1.tight_layout()
-    fig1.savefig("phi_bar_vs_time.png", dpi=300, bbox_inches="tight")
+    ax3 = ax2.twinx()
+    ax3.plot(t, avg_dom, color='#FB6542', label="Avg Domain Size", lw=2, linestyle=':')
+    ax3.set_ylabel("Domain Size (beads)", color='#FB6542')
+    ax3.tick_params(axis='y', labelcolor='#FB6542')
 
-    # -------- Plot: xi(t) --------
-    fig2, ax2 = plt.subplots(figsize=(7.0, 4.0))
-    ax2.plot(
-        t, xi_1e_ts,
-        linewidth=LINEWIDTH,
-        color=COLOR_XI_1E,
-        marker=MARKER,
-        markersize=MARKERSIZE,
-        label=r"$\xi_{1/e}$"
-    )
-    ax2.plot(
-        t, xi_int_ts,
-        linewidth=LINEWIDTH,
-        color=COLOR_XI_INT,
-        marker=MARKER,
-        markersize=MARKERSIZE,
-        label=r"$\xi_{\rm int}$"
-    )
-    ax2.set_xlabel(xlabel, fontsize=12)
-    ax2.set_ylabel("Correlation length (beads)", fontsize=12)
-    ax2.set_title("Correlation length vs time", fontsize=13)
-    ax2.legend()
-    fig2.tight_layout()
-    fig2.savefig("xi_vs_time.png", dpi=300, bbox_inches="tight")
+    ax2.set_title("Defect Dynamics & Coarsening")
+    fig2.savefig("perversions_and_domains.png", dpi=300)
+
+    # 3. Kymograph (Spacetime Heatmap)
+    # Convert list of arrays to 2D matrix.
+    # Warning: Assumes all frames have same polymer length.
+    # If length changes, this part needs padding.
+    try:
+        phi_matrix = np.array(kymograph_data)  # Shape: (Time, Space)
+
+        fig3, ax4 = plt.subplots(figsize=(10, 6))
+        # Use a diverging colormap (Blue=Left, Red=Right, White=0)
+        limit = np.percentile(np.abs(phi_matrix), 98)  # Auto-scale color
+        im = ax4.imshow(phi_matrix, aspect='auto', cmap='bwr',
+                        vmin=-limit, vmax=limit, interpolation='nearest',
+                        extent=[0, phi_matrix.shape[1], t[-1], t[0]])  # Y-axis: Time (Top to Bottom?) or Bottom to Top
+
+        # Standard physics convention: Time flows upwards or downwards.
+        # Here origin='upper' (default) means index 0 is at top.
+        # Let's flip extent so time increases upwards if desired, or keep as matrix index.
+        # Let's label explicitly.
+
+        cbar = plt.colorbar(im, ax=ax4)
+        cbar.set_label(r"Chirality $\phi$")
+        ax4.set_xlabel("Genomic Position (beads)")
+        ax4.set_ylabel("Time")
+        ax4.set_title("Spatiotemporal Evolution of Chirality (Kymograph)")
+        fig3.savefig("kymograph_chirality.png", dpi=300)
+
+    except Exception as e:
+        print(f"Could not plot kymograph (likely varying chain lengths): {e}")
 
     plt.show()
+    print("Done. Generated observables.txt and 3 PNG plots.")
