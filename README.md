@@ -2,25 +2,37 @@
 
 CUDA simulator for *Dynamics of Symmetry Breaking and Defect Generation in a Single Ideal Motorized Chromosome as It Undergoes Mitosis*.
 
-As condensin activity increases, an idealized chromosome develops left- and right-handed helical domains. The boundaries between domains of opposite handedness are called perversions. The study examines how the rate of condensin activation affects their formation and persistence.
+## ✨ Features
 
-## Environment
+- Simulates finite-rate activation of condensin I and II in a 5,000-bead chromosome starting from an interphase conformation.
+- Tracks the folding dynamics in which left- and right-handed helical domains emerge and meet at boundaries called perversions.
+- Saves polymer trajectories and topology in LAMMPS formats alongside motor-activity and kick-count records.
 
-The [CUDA simulator](simulation/activation_ramp/) builds on Linux with GNU Make, the NVIDIA CUDA Toolkit including `nvcc` and cuRAND, and a CUDA-compatible host compiler with C++17 support. Running the simulator requires an NVIDIA GPU and a compatible driver.
+## 📦 Dependencies
 
-The build was verified with CUDA 12.2 and GCC 7.3.1. The Makefile targets `sm_80` by default. Set `ARCH_SM` to the compute capability of your GPU without the decimal point. Run `make clean` before rebuilding for a different GPU architecture.
+- Linux and GNU Make
+- NVIDIA CUDA Toolkit with `nvcc` and cuRAND
+- CUDA-compatible host compiler with C++17 support
+- NVIDIA GPU and a compatible driver for execution
 
-## Build
+The build was verified with CUDA 12.2 and GCC 7.3.1.
+
+## 🚀 Usage
+
+### Build
+
+Clone the repository and build the [CUDA simulator](simulation/activation_ramp/).
 
 ```bash
 git clone git@github.com:CaOaC/KZM_Perversion.git
 cd KZM_Perversion/simulation/activation_ramp
+mkdir -p Input Output
 make
 ```
 
-The build produces the executable `kickModel` in the current directory.
+The build produces `kickModel` in the current directory. The [Makefile](simulation/activation_ramp/Makefile) targets `sm_80` by default. Set `ARCH_SM` to the compute capability of your GPU without the decimal point. Run `make clean` before rebuilding for a different GPU architecture.
 
-## Input
+### Input
 
 Supply the starting conformation separately as `Input/Interphase.txt` relative to the working directory. For the default simulation, it must contain 5,000 whitespace-delimited rows in polymer contour order. Each row has nine fields and the file has no header.
 
@@ -30,12 +42,11 @@ integer integer x y z integer integer integer integer
 
 The simulator reads Cartesian coordinates from columns 3–5. The remaining columns are parsed as integers and discarded. Bead order comes from row order.
 
-## Run
+### Run
 
 Run the example from the directory containing `kickModel` and `Input/Interphase.txt`.
 
 ```bash
-mkdir -p Output
 ./kickModel --ensemble 0 --seed 114514
 ```
 
@@ -50,7 +61,7 @@ This CUDA configuration uses harmonic bonds. Condensin-I and condensin-II activi
 
 Use a separate working directory for each simultaneous run. Some output filenames are shared across replicate IDs and are overwritten at startup.
 
-## Output
+### Output
 
 | File in `Output/` | Contents |
 | --- | --- |
@@ -62,18 +73,22 @@ Use a separate working directory for each simultaneous run. Some output filename
 
 The simulator writes trajectory frames, activity records, and kick counts every 100 kick cycles during the active run. Trajectory timestamps use simulation time, and the activity log uses the kick-cycle count.
 
-## Dynamics trajectory
+## 📺 Demo
 
-[![Three simulated chromosome copies fold and develop red and blue domains of opposite handedness](assets/dynamics-trajectory.gif)](assets/dynamics-trajectory.mp4)
+### Dynamics trajectory
+
+<p align="center">
+  <img src="./assets/dynamics-trajectory.gif" width="480" alt="Three simulated chromosome copies fold and develop red and blue domains of opposite handedness">
+</p>
 
 Three simulated chromosome copies develop domains of opposite handedness during finite-rate activation. Red and blue indicate the two local handedness states. [Download the original MP4](assets/dynamics-trajectory.mp4?raw=true).
 
-## Activation ramp protocols
+### Activation ramp protocols
 
 ![Schematic of fast, intermediate, and slow motor-activity ramps crossing the same critical activity at different times](assets/activation-ramp-protocols.png)
 
 The schematic shows three linear ramps of condensin-II activity, $\kappa_{\mathrm{II}}(t) = Rt$. Faster ramps reach the critical activity $\kappa_c$ sooner, at $t_c = \kappa_c/R$.
 
-## Citation
+## 🧾 Information
 
 Zhiyu Cao, Chaoqun Du, Zhonghuai Hou, and Peter G. Wolynes. “Dynamics of Symmetry Breaking and Defect Generation in a Single Ideal Motorized Chromosome as It Undergoes Mitosis.” Manuscript, 14 November 2026.
