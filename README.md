@@ -1,8 +1,20 @@
 # KZM Perversion
 
-Analysis scripts for *Dynamics of Symmetry Breaking and Defect Generation in a Single Ideal Motorized Chromosome as It Undergoes Mitosis*.
+CUDA simulation and Python analysis code for *Dynamics of Symmetry Breaking and Defect Generation in a Single Ideal Motorized Chromosome as It Undergoes Mitosis*.
 
 In the model, increasing condensin activity leads to the formation of left- and right-handed helical domains along a single idealized chromosome. A **perversion** is the boundary between domains of opposite handedness. The study examines how quickly these boundaries form as motor activity increases and how they move and persist afterward. For slow activation, the mean perversion count scales approximately as $t_c^{-0.484}$, where $t_c$ is the time to reach the chiral ordering transition. At faster activation rates, the count approaches a plateau.
+
+## Dynamics trajectory
+
+[![Three simulated chromosome copies fold and develop red and blue domains of opposite handedness](assets/dynamics-trajectory.gif)](assets/dynamics-trajectory.mp4)
+
+Three simulated chromosome copies develop domains of opposite handedness during finite-rate activation. Red and blue indicate the two local handedness states. [Download the original MP4](assets/dynamics-trajectory.mp4?raw=true).
+
+## Activation ramp protocols
+
+![Schematic of fast, intermediate, and slow motor-activity ramps crossing the same critical activity at different times](assets/activation-ramp-protocols.png)
+
+The schematic shows three linear ramps of condensin-II activity, $\kappa_{\mathrm{II}}(t) = Rt$. Faster ramps reach the critical activity $\kappa_c$ sooner, at $t_c = \kappa_c/R$.
 
 ## Setup
 
@@ -14,7 +26,27 @@ python -m pip install numpy scipy matplotlib numba
 
 The trajectory and frame analysis scripts require an NVIDIA GPU and a working Numba CUDA environment. To check whether Numba detects CUDA, run `python -c "from numba import cuda; print(cuda.is_available())"`. The plotting scripts can run from existing analysis tables on a CPU. Folder dialogs require Tkinter and a graphical desktop. For headless use, set paths in the scripts and disable the folder dialogs.
 
-## Trajectory inputs
+## CUDA simulation
+
+[`simulation/activation_ramp/`](simulation/activation_ramp/) contains one 5,000-bead interphase-start configuration. In [`main.cu`](simulation/activation_ramp/main.cu), condensin-I and condensin-II activities start at zero and increase by $5\times10^{-4}$ and $10^{-4}$ per scheduled update, respectively. This configuration uses harmonic bonds and defaults to `p_slide=0`. The `--p_slide` option changes the motor sliding probability.
+
+Build on Linux with GNU Make, a C++17 compiler, and the NVIDIA CUDA Toolkit. The [Makefile](simulation/activation_ramp/Makefile) targets `sm_80` by default. Set `ARCH_SM` for your GPU when needed.
+
+```bash
+cd simulation/activation_ramp
+make
+```
+
+Supply the starting conformation separately as `Input/Interphase.txt` in the simulator directory. The input has 5,000 headerless records in polymer contour order, each with two integers, three Cartesian coordinates, and four trailing integers. Run the simulator from the same directory.
+
+```bash
+mkdir -p Output
+./kickModel --ensemble 0 --seed 114514
+```
+
+The simulator writes `Output/trajectory_tau*_v*_ems*.dump` and `Output/kappavstime_*.txt`. The ramp trajectory filename records the `p10` and `p_slide` arguments in its `tau` and `v` fields. To analyze a ramp with the frame-based workflow below, export the dump frames as numbered coordinate tables and keep the corresponding activity log with them.
+
+## Trajectory inputs for fixed-activity analysis
 
 Supply LAMMPS dump files named with the motor residence time (`tau`), sliding speed (`v`), type-I and type-II motor activities (`kI` and `kII`), and replicate index (`ems`). For example:
 
