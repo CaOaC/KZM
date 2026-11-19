@@ -56,8 +56,6 @@ Rebuild with `make` after editing the source.
 | `trajectory_tau*_v*_ems*.dump` | LAMMPS-style trajectory with simulation timestamps, box bounds, bead IDs and types, Cartesian coordinates, condensin-I and condensin-II kick counts, and periodic image flags. The `tau` and `v` filename fields store the values of `p10` and `p_slide`. |
 | `kappavstime_<ensemble>.txt` | Activity log. Each row starts with the kick-cycle count, followed by a condensin-I and condensin-II activity pair for each of the ten contour segments. |
 
-The simulator writes both files every 100 kick cycles during the active run.
-
 ## 📺 Demo
 
 ### Activation ramp protocols
@@ -78,8 +76,8 @@ Three simulated chromosome copies develop domains of opposite handedness during 
 
 ## 🧾 Information
 
-During mitotic folding in the model, different regions of the chromosome can independently choose opposite helical handedness. For slow activation ramps, the mean number of perversions formed early in ordering scales as $t_c^{-0.484}$, consistent with the Kibble–Zurek mechanism. The count approaches a plateau for rapid activation.
+Using a motorized polymer model of mitotic chromosome folding, the study shows how the rate of condensin activation governs the formation of perversions, the boundaries between left- and right-handed helical domains. The mean number of perversions formed during early ordering follows a Kibble–Zurek power law for slow activation and approaches a plateau for rapid activation. Higher motor activity slows perversion motion and turnover, allowing the defects to persist. Perversion sites are also associated with weaker helical order, layer misalignment, and local knotting.
 
-In the ordered state, higher motor activity reduces perversion mobility and lowers their rates of creation and annihilation. Perversions are also spatially associated with weaker helical coherence, misaligned layers, and local knots.
+### Citation
 
 Zhiyu Cao, Chaoqun Du, Zhonghuai Hou, and Peter G. Wolynes. “Dynamics of Symmetry Breaking and Defect Generation in a Single Ideal Motorized Chromosome as It Undergoes Mitosis.” Manuscript, 14 November 2026.
