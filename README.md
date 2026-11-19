@@ -38,23 +38,16 @@ Supply the $N$-bead starting conformation as `Input/Interphase.txt`, with one ro
 
 ### Run
 
-Run the example from the directory containing `kickModel` and `Input/Interphase.txt`.
+Run from the directory containing `kickModel` and `Input/Interphase.txt`.
 
 ```bash
-./kickModel --ensemble 0 --seed 114514
+./kickModel
 ```
 
-| Option | Meaning |
-| --- | --- |
-| `--ensemble` | Replicate ID written to the trajectory and activity-log filenames. |
-| `--seed` | Random seed for the simulation. |
-| `--tn`, `--an` | Total and active bead counts. For a custom chain length, set both to the input bead count $N$, a multiple of 10 for the current ramp. |
-| `--p10` | Motor detachment parameter. Default is `1`. |
-| `--p_slide` | Motor sliding parameter. Default is `0`. |
+- Change the bead counts and other simulation defaults in [`var.cu`](simulation/activation_ramp/var.cu).
+- Change the condensin activation schedule in [`main.cu`](simulation/activation_ramp/main.cu).
 
-This CUDA configuration uses harmonic bonds. Condensin-I and condensin-II activities start at zero and increase by $5 \times 10^{-4}$ and $10^{-4}$, respectively, at each scheduled update. They are capped at `0.05` and `0.01`. The schedule is defined in [main.cu](simulation/activation_ramp/main.cu).
-
-Use a separate working directory for each simultaneous run. Some output filenames are shared across replicate IDs and are overwritten at startup.
+Rebuild with `make` after editing the source.
 
 ### Output
 
