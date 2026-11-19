@@ -4,9 +4,9 @@ CUDA simulator for *Dynamics of Symmetry Breaking and Defect Generation in a Sin
 
 ## ✨ Features
 
-- Simulates finite-rate activation of condensin I and II in a 5,000-bead chromosome starting from an interphase conformation.
+- Simulates finite-rate activation of condensin I and II in an $N$-bead chromosome starting from an interphase conformation.
 - Tracks the folding dynamics in which left- and right-handed helical domains emerge and meet at boundaries called perversions.
-- Saves polymer trajectories and topology in LAMMPS formats alongside motor-activity and kick-count records.
+- Saves LAMMPS-style trajectories and records motor activity along the chromosome.
 
 ## 📦 Dependencies
 
@@ -34,13 +34,7 @@ The build produces `kickModel` in the current directory. The [Makefile](simulati
 
 ### Input
 
-Supply the starting conformation separately as `Input/Interphase.txt` relative to the working directory. For the default simulation, it must contain 5,000 whitespace-delimited rows in polymer contour order. Each row has nine fields and the file has no header.
-
-```text
-integer integer x y z integer integer integer integer
-```
-
-The simulator reads Cartesian coordinates from columns 3–5. The remaining columns are parsed as integers and discarded. Bead order comes from row order.
+Supply the $N$-bead starting conformation as `Input/Interphase.txt`, with one row per bead in polymer contour order.
 
 ### Run
 
@@ -54,6 +48,7 @@ Run the example from the directory containing `kickModel` and `Input/Interphase.
 | --- | --- |
 | `--ensemble` | Replicate ID written to the trajectory and activity-log filenames. |
 | `--seed` | Random seed for the simulation. |
+| `--tn`, `--an` | Total and active bead counts. For a custom chain length, set both to the input bead count $N$, a multiple of 10 for the current ramp. |
 | `--p10` | Motor detachment parameter. Default is `1`. |
 | `--p_slide` | Motor sliding parameter. Default is `0`. |
 
@@ -67,13 +62,16 @@ Use a separate working directory for each simultaneous run. Some output filename
 | --- | --- |
 | `trajectory_tau*_v*_ems*.dump` | LAMMPS-style trajectory with simulation timestamps, box bounds, bead IDs and types, Cartesian coordinates, condensin-I and condensin-II kick counts, and periodic image flags. The `tau` and `v` filename fields store the values of `p10` and `p_slide`. |
 | `kappavstime_<ensemble>.txt` | Activity log. Each row starts with the kick-cycle count, followed by a condensin-I and condensin-II activity pair for each of the ten contour segments. |
-| `kicknumber.txt` | Condensin-I kick count for each bead at each saved output step. |
-| `TOPO_kappa_*.data` | Initial coordinates and polymer bond connectivity in LAMMPS data format. |
-| `para_kappa*.txt` | Run parameters, including bead counts, model constants, box length, and the simulation time limit. |
 
-The simulator writes trajectory frames, activity records, and kick counts every 100 kick cycles during the active run. Trajectory timestamps use simulation time, and the activity log uses the kick-cycle count.
+The simulator writes both files every 100 kick cycles during the active run.
 
 ## 📺 Demo
+
+### Activation ramp protocols
+
+![Schematic of fast, intermediate, and slow motor-activity ramps crossing the same critical activity at different times](assets/activation-ramp-protocols.png)
+
+The schematic shows three linear ramps of condensin-II activity, $\kappa_{\mathrm{II}}(t) = Rt$. Faster ramps reach the critical activity $\kappa_c$ sooner, at $t_c = \kappa_c/R$.
 
 ### Dynamics trajectory
 
@@ -83,12 +81,10 @@ The simulator writes trajectory frames, activity records, and kick counts every 
 
 Three simulated chromosome copies develop domains of opposite handedness during finite-rate activation. Red and blue indicate the two local handedness states. [Download the original MP4](assets/dynamics-trajectory.mp4?raw=true).
 
-### Activation ramp protocols
-
-![Schematic of fast, intermediate, and slow motor-activity ramps crossing the same critical activity at different times](assets/activation-ramp-protocols.png)
-
-The schematic shows three linear ramps of condensin-II activity, $\kappa_{\mathrm{II}}(t) = Rt$. Faster ramps reach the critical activity $\kappa_c$ sooner, at $t_c = \kappa_c/R$.
-
 ## 🧾 Information
+
+During mitotic folding in the model, different regions of the chromosome can independently choose opposite helical handedness. For slow activation ramps, the mean number of perversions formed early in ordering scales as $t_c^{-0.484}$, consistent with the Kibble–Zurek mechanism. The count approaches a plateau for rapid activation.
+
+In the ordered state, higher motor activity reduces perversion mobility and lowers their rates of creation and annihilation. Perversions are also spatially associated with weaker helical coherence, misaligned layers, and local knots.
 
 Zhiyu Cao, Chaoqun Du, Zhonghuai Hou, and Peter G. Wolynes. “Dynamics of Symmetry Breaking and Defect Generation in a Single Ideal Motorized Chromosome as It Undergoes Mitosis.” Manuscript, 14 November 2026.
