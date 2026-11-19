@@ -62,7 +62,9 @@ The simulator writes both files every 100 kick cycles during the active run.
 
 ### Activation ramp protocols
 
-![Schematic of fast, intermediate, and slow motor-activity ramps crossing the same critical activity at different times](assets/activation-ramp-protocols.png)
+<p align="center">
+  <img src="./assets/activation-ramp-protocols.png" width="480" alt="Schematic of fast, intermediate, and slow motor-activity ramps crossing the same critical activity at different times">
+</p>
 
 The schematic shows three linear ramps of condensin-II activity, $\kappa_{\mathrm{II}}(t) = Rt$. Faster ramps reach the critical activity $\kappa_c$ sooner, at $t_c = \kappa_c/R$.
 
