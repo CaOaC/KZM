@@ -72,7 +72,7 @@ The schematic shows three linear ramps of condensin-II activity, $\kappa_{\mathr
   <img src="./assets/dynamics-trajectory.gif" width="480" alt="Three simulated chromosome copies fold and develop red and blue domains of opposite handedness">
 </p>
 
-Three simulated chromosome copies develop domains of opposite handedness during finite-rate activation. Red and blue indicate the two local handedness states. [Download the original MP4](assets/dynamics-trajectory.mp4?raw=true).
+Three simulated chromosome copies develop domains of opposite handedness during finite-rate activation. Red and blue indicate the two local handedness states. The white segment at the top marks the region where computing local chirality would require beads beyond the chain end. [Download the original MP4](assets/dynamics-trajectory.mp4?raw=true).
 
 ## 🧾 Information
 
